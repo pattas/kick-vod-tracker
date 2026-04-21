@@ -59,6 +59,33 @@ const KVT = {
     await chrome.storage.local.set({ [this.STORAGE_KEY]: hist });
   },
 
+  async saveNote(key, note, fallbackMeta = null) {
+    const hist = await this.loadHistory();
+    if (!hist[key]) {
+      if (!fallbackMeta) return null;
+      hist[key] = {
+        key,
+        streamer: fallbackMeta.streamer,
+        vodId: fallbackMeta.vodId,
+        title: fallbackMeta.title || "",
+        position: 0,
+        duration: 0,
+        url: this.buildResumeUrl(fallbackMeta.streamer, fallbackMeta.vodId, 0),
+        updatedAt: Date.now(),
+      };
+    }
+    const trimmed = (note || "").trim();
+    if (trimmed) {
+      hist[key].note = trimmed;
+      hist[key].noteUpdatedAt = Date.now();
+    } else {
+      delete hist[key].note;
+      delete hist[key].noteUpdatedAt;
+    }
+    await chrome.storage.local.set({ [this.STORAGE_KEY]: hist });
+    return hist[key];
+  },
+
   async clearAll() {
     await chrome.storage.local.remove(this.STORAGE_KEY);
   },

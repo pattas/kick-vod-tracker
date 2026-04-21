@@ -60,3 +60,52 @@
 .kvt-completed .kvt-progress-fill {
   background: #9a9a9a;
 }
+
+.kvt-note-icon {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(12, 12, 12, 0.88);
+  color: #53fc18;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+  z-index: 6;
+  border: 1px solid rgba(83, 252, 24, 0.5);
+  filter: drop-shadow(0 0 4px rgba(83, 252, 24, 0.4));
+  cursor: help;
+  user-select: none;
+}
+
+.kvt-note-icon::after {
+  content: attr(data-note);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: rgba(10, 10, 10, 0.97);
+  color: #e8e8e8;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #53fc18;
+  min-width: 180px;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10;
+  font-weight: 400;
+  text-align: left;
+  filter: none;
+}
+
+.kvt-note-icon:hover::after {
+  opacity: 1;
+  transform: translateY(0);
+}

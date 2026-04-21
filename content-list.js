@@ -71,6 +71,21 @@
     const fill = bar.querySelector(".kvt-progress-fill");
     fill.style.width = `${Math.round(ratio * 100)}%`;
 
+    // Indikátor komentáře
+    let noteIcon = container.querySelector(":scope > .kvt-note-icon");
+    if (entry.note) {
+      if (!noteIcon) {
+        noteIcon = document.createElement("div");
+        noteIcon.className = "kvt-note-icon";
+        noteIcon.textContent = "📝";
+        container.appendChild(noteIcon);
+      }
+      noteIcon.title = entry.note;
+      noteIcon.setAttribute("data-note", entry.note);
+    } else if (noteIcon) {
+      noteIcon.remove();
+    }
+
     // Upravíme href, aby klik obnovil přehrávání na poslední pozici.
     if (!completed && entry.position > K.MIN_SAVE_SECONDS) {
       const resumeUrl = K.buildResumeUrl(entry.streamer, entry.vodId, entry.position);
@@ -87,6 +102,7 @@
     container.classList.remove("kvt-marked", "kvt-completed", "kvt-inprogress");
     container.querySelector(":scope > .kvt-badge")?.remove();
     container.querySelector(":scope > .kvt-progress")?.remove();
+    container.querySelector(":scope > .kvt-note-icon")?.remove();
     if (anchor.dataset.kvtOriginal) {
       anchor.setAttribute("href", anchor.dataset.kvtOriginal);
       delete anchor.dataset.kvtOriginal;

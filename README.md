@@ -14,6 +14,11 @@ kde jsi skončil.
   - Zelená = rozkoukáno
   - Šedá = dokoukáno (≥ 95 % nebo zbývá < 30 s)
 - V popup ikony rozšíření je seznam všech sledovaných VODů napříč streamery s fulltextovým filtrem, skrytím dokoukaných, tlačítkem "Vymazat vše" a odstraněním jednotlivých záznamů.
+- **Komentáře k záznamům** — ke každému VODu si můžeš napsat vlastní poznámku:
+  - Přímo na VOD stránce přes plovoucí tlačítko 📝 (vpravo dole).
+  - V popupu přes ikonu 📝 u každého záznamu (rozbalovací textarea, Ctrl+Enter ukládá).
+  - Na seznamu `/videos` se u VODů s komentářem zobrazuje indikátor 📝 s náhledem po najetí kurzorem.
+  - Fulltextový filtr v popupu hledá i v textu komentářů.
 - Vše je jen lokálně (`chrome.storage.local`), nic se nikam neposílá.
 
 ## Instalace (Chrome / Edge / Brave / Opera)

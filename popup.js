@@ -7,6 +7,7 @@ const hideCompletedEl = document.getElementById("hide-completed");
 const clearAllBtn = document.getElementById("clear-all");
 
 let history = {};
+const expandedNotes = new Set();
 
 async function refresh() {
   history = await K.loadHistory();
@@ -23,7 +24,8 @@ function render() {
       if (!q) return true;
       return (
         (e.title || "").toLowerCase().includes(q) ||
-        (e.streamer || "").toLowerCase().includes(q)
+        (e.streamer || "").toLowerCase().includes(q) ||
+        (e.note || "").toLowerCase().includes(q)
       );
     })
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -85,6 +87,18 @@ function renderItem(entry) {
   badge.textContent = completed ? "✓" : "▶";
   actions.appendChild(badge);
 
+  const noteBtn = document.createElement("button");
+  noteBtn.className = "note-btn" + (entry.note ? " has-note" : "");
+  noteBtn.textContent = "📝";
+  noteBtn.title = entry.note ? "Upravit komentář" : "Přidat komentář";
+  noteBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (expandedNotes.has(entry.key)) expandedNotes.delete(entry.key);
+    else expandedNotes.add(entry.key);
+    render();
+  });
+  actions.appendChild(noteBtn);
+
   const removeBtn = document.createElement("button");
   removeBtn.className = "remove-btn";
   removeBtn.textContent = "×";
@@ -92,6 +106,7 @@ function renderItem(entry) {
   removeBtn.addEventListener("click", async (ev) => {
     ev.stopPropagation();
     await K.removeEntry(entry.key);
+    expandedNotes.delete(entry.key);
     await refresh();
   });
   actions.appendChild(removeBtn);
@@ -108,7 +123,22 @@ function renderItem(entry) {
   item.appendChild(meta);
   item.appendChild(progress);
 
-  item.addEventListener("click", () => {
+  if (entry.note && !expandedNotes.has(entry.key)) {
+    const preview = document.createElement("div");
+    preview.className = "note-preview";
+    preview.textContent = entry.note;
+    item.appendChild(preview);
+  }
+
+  if (expandedNotes.has(entry.key)) {
+    const editor = buildNoteEditor(entry);
+    item.appendChild(editor);
+  }
+
+  item.addEventListener("click", (ev) => {
+    // Nepouštět video při kliku dovnitř editoru nebo poznámky.
+    if (ev.target.closest(".note-editor") || ev.target.closest(".note-preview"))
+      return;
     const url = completed
       ? K.buildResumeUrl(entry.streamer, entry.vodId, 0)
       : K.buildResumeUrl(entry.streamer, entry.vodId, entry.position);
@@ -117,6 +147,72 @@ function renderItem(entry) {
   });
 
   return item;
+}
+
+function buildNoteEditor(entry) {
+  const wrap = document.createElement("div");
+  wrap.className = "note-editor";
+  wrap.addEventListener("click", (ev) => ev.stopPropagation());
+
+  const ta = document.createElement("textarea");
+  ta.placeholder = "Tvůj komentář k tomuto záznamu…";
+  ta.value = entry.note || "";
+  ta.rows = 3;
+
+  const hint = document.createElement("div");
+  hint.className = "note-hint";
+  hint.textContent = "Uloží se automaticky po kliknutí mimo. Ctrl+Enter uloží a zavře.";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "note-btn-row";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Uložit";
+  saveBtn.className = "primary";
+  saveBtn.addEventListener("click", async () => {
+    await K.saveNote(entry.key, ta.value);
+    expandedNotes.delete(entry.key);
+    await refresh();
+  });
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Zavřít";
+  cancelBtn.addEventListener("click", () => {
+    expandedNotes.delete(entry.key);
+    render();
+  });
+
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+
+  ta.addEventListener("blur", async () => {
+    if (ta.value !== (entry.note || "")) {
+      await K.saveNote(entry.key, ta.value);
+      // Nezavíráme editor, jen aktualizujeme historii v paměti.
+      history = await K.loadHistory();
+    }
+  });
+
+  ta.addEventListener("keydown", async (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      await K.saveNote(entry.key, ta.value);
+      expandedNotes.delete(entry.key);
+      await refresh();
+    } else if (ev.key === "Escape") {
+      expandedNotes.delete(entry.key);
+      render();
+    }
+  });
+
+  wrap.appendChild(ta);
+  wrap.appendChild(btnRow);
+  wrap.appendChild(hint);
+
+  // Auto focus po vložení do DOMu.
+  setTimeout(() => ta.focus(), 0);
+
+  return wrap;
 }
 
 searchEl.addEventListener("input", render);
