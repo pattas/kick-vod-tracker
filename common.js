@@ -3,6 +3,7 @@
 
 const KVT = {
   STORAGE_KEY: "kvt_watch_history",
+  _invalidated: false,
   // VOD se považuje za "dokoukaný", když zbývá méně než tento počet sekund
   // nebo je pokrok vyšší než COMPLETED_RATIO.
   COMPLETED_TAIL_SECONDS: 30,
@@ -40,26 +41,69 @@ const KVT = {
     }
   },
 
+  // Obálka pro chrome.* volání — zachytí "Extension context invalidated"
+  // (stane se po reloadu rozšíření) a ticho disabluje všechny další volání.
+  _safeCall(fn, fallback) {
+    if (this._invalidated) return Promise.resolve(fallback);
+    if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) {
+      this._invalidated = true;
+      return Promise.resolve(fallback);
+    }
+    try {
+      return Promise.resolve(fn()).catch((e) => {
+        const msg = String(e && e.message ? e.message : e);
+        if (
+          msg.includes("Extension context invalidated") ||
+          msg.includes("Extension context was invalidated") ||
+          msg.includes("context invalidated")
+        ) {
+          this._invalidated = true;
+          return fallback;
+        }
+        throw e;
+      });
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : e);
+      if (msg.includes("context invalidated")) {
+        this._invalidated = true;
+        return Promise.resolve(fallback);
+      }
+      return Promise.reject(e);
+    }
+  },
+
   async loadHistory() {
-    const res = await chrome.storage.local.get(this.STORAGE_KEY);
-    return res[this.STORAGE_KEY] || {};
+    const res = await this._safeCall(
+      () => chrome.storage.local.get(this.STORAGE_KEY),
+      {},
+    );
+    return (res && res[this.STORAGE_KEY]) || {};
   },
 
   async saveEntry(entry) {
+    if (this._invalidated) return null;
     const hist = await this.loadHistory();
     const prev = hist[entry.key] || {};
     hist[entry.key] = { ...prev, ...entry, updatedAt: Date.now() };
-    await chrome.storage.local.set({ [this.STORAGE_KEY]: hist });
+    await this._safeCall(
+      () => chrome.storage.local.set({ [this.STORAGE_KEY]: hist }),
+      null,
+    );
     return hist[entry.key];
   },
 
   async removeEntry(key) {
+    if (this._invalidated) return;
     const hist = await this.loadHistory();
     delete hist[key];
-    await chrome.storage.local.set({ [this.STORAGE_KEY]: hist });
+    await this._safeCall(
+      () => chrome.storage.local.set({ [this.STORAGE_KEY]: hist }),
+      null,
+    );
   },
 
   async saveNote(key, note, fallbackMeta = null) {
+    if (this._invalidated) return null;
     const hist = await this.loadHistory();
     if (!hist[key]) {
       if (!fallbackMeta) return null;
@@ -82,12 +126,33 @@ const KVT = {
       delete hist[key].note;
       delete hist[key].noteUpdatedAt;
     }
-    await chrome.storage.local.set({ [this.STORAGE_KEY]: hist });
+    await this._safeCall(
+      () => chrome.storage.local.set({ [this.STORAGE_KEY]: hist }),
+      null,
+    );
     return hist[key];
   },
 
   async clearAll() {
-    await chrome.storage.local.remove(this.STORAGE_KEY);
+    await this._safeCall(() => chrome.storage.local.remove(this.STORAGE_KEY), null);
+  },
+
+  addStorageListener(cb) {
+    try {
+      if (chrome?.storage?.onChanged) {
+        chrome.storage.onChanged.addListener((changes, area) => {
+          if (this._invalidated) return;
+          try {
+            cb(changes, area);
+          } catch (e) {
+            const msg = String(e && e.message ? e.message : e);
+            if (msg.includes("context invalidated")) this._invalidated = true;
+          }
+        });
+      }
+    } catch {
+      this._invalidated = true;
+    }
   },
 
   isCompleted(entry) {

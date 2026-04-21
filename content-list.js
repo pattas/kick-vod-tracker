@@ -242,8 +242,10 @@
 
   function scheduleDecorate() {
     if (decorateTimer) return;
+    if (K._invalidated) return;
     decorateTimer = setTimeout(() => {
       decorateTimer = null;
+      if (K._invalidated) return;
       decorate();
     }, 200);
   }
@@ -280,6 +282,7 @@
     else deactivate();
 
     setInterval(() => {
+      if (K._invalidated) return;
       if (location.href !== lastHref) {
         lastHref = location.href;
         if (onListPage()) {
@@ -292,7 +295,7 @@
     }, 500);
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  K.addStorageListener((changes, area) => {
     if (area === "local" && changes[K.STORAGE_KEY]) {
       history = changes[K.STORAGE_KEY].newValue || {};
       if (isActive) scheduleDecorate();

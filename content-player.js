@@ -114,6 +114,11 @@
 
     if (saveTimer) clearInterval(saveTimer);
     saveTimer = setInterval(() => {
+      if (K._invalidated) {
+        clearInterval(saveTimer);
+        saveTimer = null;
+        return;
+      }
       if (!video.paused && !video.ended) persist();
     }, SAVE_INTERVAL_MS);
 
@@ -142,6 +147,7 @@
     // Při změně URL (SPA navigace) resetujeme resumedFor a UI.
     let lastHref = location.href;
     setInterval(() => {
+      if (K._invalidated) return;
       if (location.href !== lastHref) {
         lastHref = location.href;
         resumedFor = null;
@@ -166,13 +172,11 @@
     }, 500);
 
     // Aktualizujeme badge tlačítka po externí změně (třeba z popupu).
-    if (chrome?.storage?.onChanged) {
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local" && changes[K.STORAGE_KEY]) {
-          refreshNoteBadge();
-        }
-      });
-    }
+    K.addStorageListener((changes, area) => {
+      if (area === "local" && changes[K.STORAGE_KEY]) {
+        refreshNoteBadge();
+      }
+    });
   }
 
   async function openNoteEditor() {
@@ -398,28 +402,25 @@
 
   // Před opuštěním stránky ještě jednou uložíme.
   window.addEventListener("beforeunload", () => {
+    if (K._invalidated) return;
     if (currentVideo) {
       const vod = currentVod();
       if (vod) {
-        const hist = JSON.parse(localStorage.getItem("kvt_pending") || "{}");
-        hist[vod.key] = {
+        const entry = {
           key: vod.key,
           streamer: vod.streamer,
           vodId: vod.vodId,
           position: currentVideo.currentTime || 0,
           duration: currentVideo.duration || 0,
           title: getTitle(),
-          url: K.buildResumeUrl(vod.streamer, vod.vodId, currentVideo.currentTime || 0),
-          updatedAt: Date.now(),
+          url: K.buildResumeUrl(
+            vod.streamer,
+            vod.vodId,
+            currentVideo.currentTime || 0,
+          ),
         };
-        // Synchronně uložíme přes storage (best effort — MV3 service worker umí zpracovat).
-        try {
-          chrome.storage.local.get(K.STORAGE_KEY, (res) => {
-            const all = res[K.STORAGE_KEY] || {};
-            all[vod.key] = { ...(all[vod.key] || {}), ...hist[vod.key] };
-            chrome.storage.local.set({ [K.STORAGE_KEY]: all });
-          });
-        } catch {}
+        // Best-effort synchronní uložení přes safe wrapper.
+        K.saveEntry(entry).catch(() => {});
       }
     }
   });
