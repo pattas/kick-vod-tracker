@@ -78,26 +78,13 @@
     return best;
   }
 
-  // Před každým decorate smaž staré dekorace, aby se nezasekávaly
-  // na elementech, které už neodpovídají aktuálnímu DOM layoutu.
-  function resetAllDecorations() {
-    document.querySelectorAll(".kvt-marked").forEach((el) => {
-      el.classList.remove("kvt-marked", "kvt-inprogress", "kvt-completed");
-    });
-    document
-      .querySelectorAll(".kvt-badge, .kvt-progress, .kvt-note-icon")
-      .forEach((el) => el.remove());
-    document.querySelectorAll("a[data-kvt-original]").forEach((a) => {
-      a.setAttribute("href", a.dataset.kvtOriginal);
-      delete a.dataset.kvtOriginal;
-    });
-  }
+  // Sleduje, kde je aktuálně aplikována dekorace pro daný VOD.
+  // Díky tomu překreslujeme jen to, co se změnilo, a ne mažeme/přidáváme
+  // elementy při každém tiknutí MutationObserveru (což působilo flickering).
+  const decoratedByKey = new Map();
 
   function decorate() {
     if (!onListPage()) return;
-
-    // Vyčisti staré dekorace — můžou zůstat z předchozího layoutu.
-    resetAllDecorations();
 
     // Všechny odkazy na VOD detail
     const anchors = document.querySelectorAll('a[href*="/videos/"]');
@@ -116,10 +103,11 @@
 
     log("vod groups:", groups.size);
 
+    const seenKeys = new Set();
+
     groups.forEach((anchorList, key) => {
       const entry = history[key];
 
-      // Projdi anchory a najdi jeden s odpovídajícím video thumbnailem.
       let container = null;
       for (const a of anchorList) {
         const c = findThumbContainer(a);
@@ -130,27 +118,58 @@
       }
 
       if (!container) return;
+      seenKeys.add(key);
+
+      const previous = decoratedByKey.get(key);
+      if (previous && previous !== container && document.contains(previous)) {
+        clearDecoration(previous, null);
+      }
 
       if (!entry) {
         clearDecoration(container, anchorList[0]);
+        decoratedByKey.delete(key);
         return;
       }
 
       applyDecoration(container, anchorList[0], entry);
+      decoratedByKey.set(key, container);
     });
+
+    // Uklid kontejnery, které už nejsou v DOMu nebo jejichž VOD zmizel z historie.
+    for (const [key, container] of Array.from(decoratedByKey.entries())) {
+      if (!document.contains(container) || !history[key]) {
+        if (document.contains(container)) clearDecoration(container, null);
+        decoratedByKey.delete(key);
+      }
+    }
+  }
+
+  function setIf(el, prop, value) {
+    if (el[prop] !== value) el[prop] = value;
+  }
+  function setAttrIf(el, name, value) {
+    if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  function setStyleIf(el, prop, value) {
+    if (el.style[prop] !== value) el.style[prop] = value;
   }
 
   function applyDecoration(container, anchor, entry) {
     const completed = K.isCompleted(entry);
     const ratio = K.progressRatio(entry);
 
-    container.classList.add("kvt-marked");
-    container.classList.toggle("kvt-completed", completed);
-    container.classList.toggle("kvt-inprogress", !completed);
+    if (!container.classList.contains("kvt-marked"))
+      container.classList.add("kvt-marked");
+    const wantCompleted = completed;
+    const wantInProgress = !completed;
+    if (container.classList.contains("kvt-completed") !== wantCompleted)
+      container.classList.toggle("kvt-completed", wantCompleted);
+    if (container.classList.contains("kvt-inprogress") !== wantInProgress)
+      container.classList.toggle("kvt-inprogress", wantInProgress);
 
     const computed = getComputedStyle(container);
     if (computed.position === "static") {
-      container.style.position = "relative";
+      setStyleIf(container, "position", "relative");
     }
 
     let badge = container.querySelector(":scope > .kvt-badge");
@@ -159,10 +178,12 @@
       badge.className = "kvt-badge";
       container.appendChild(badge);
     }
-    badge.textContent = completed ? "✓" : `${Math.round(ratio * 100)}%`;
-    badge.title = completed
+    const badgeText = completed ? "✓" : `${Math.round(ratio * 100)}%`;
+    setIf(badge, "textContent", badgeText);
+    const badgeTitle = completed
       ? "Dokoukáno"
       : `${K.formatTime(entry.position)} / ${K.formatTime(entry.duration)}`;
+    setAttrIf(badge, "title", badgeTitle);
 
     let bar = container.querySelector(":scope > .kvt-progress");
     if (!bar) {
@@ -174,7 +195,7 @@
       container.appendChild(bar);
     }
     const fill = bar.querySelector(".kvt-progress-fill");
-    fill.style.width = `${Math.round(ratio * 100)}%`;
+    setStyleIf(fill, "width", `${Math.round(ratio * 100)}%`);
 
     let noteIcon = container.querySelector(":scope > .kvt-note-icon");
     if (entry.note) {
@@ -184,8 +205,8 @@
         noteIcon.textContent = "📝";
         container.appendChild(noteIcon);
       }
-      noteIcon.setAttribute("data-note", entry.note);
-      noteIcon.title = entry.note;
+      setAttrIf(noteIcon, "data-note", entry.note);
+      setAttrIf(noteIcon, "title", entry.note);
     } else if (noteIcon) {
       noteIcon.remove();
     }
@@ -197,8 +218,8 @@
           entry.vodId,
           entry.position,
         );
-        const newHref =
-          new URL(resumeUrl).pathname + new URL(resumeUrl).search;
+        const u = new URL(resumeUrl);
+        const newHref = u.pathname + u.search;
         if (anchor.getAttribute("href") !== newHref) {
           anchor.dataset.kvtOriginal = anchor.getAttribute("href") || "";
           anchor.setAttribute("href", newHref);
