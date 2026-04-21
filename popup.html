@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kick VOD Tracker</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Kick VOD Tracker</h1>
+      <div class="header-actions">
+        <label class="filter">
+          <input type="checkbox" id="hide-completed" />
+          Skrýt dokoukané
+        </label>
+        <button id="clear-all" class="danger" title="Smazat celou historii">Vymazat vše</button>
+      </div>
+    </header>
+
+    <div class="search">
+      <input type="search" id="search" placeholder="Hledat podle názvu nebo streamera…" />
+    </div>
+
+    <main id="list" class="list"></main>
+
+    <footer>
+      <span id="count">0 záznamů</span>
+    </footer>
+
+    <script src="common.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
