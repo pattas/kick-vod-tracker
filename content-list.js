@@ -29,59 +29,75 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  // Najde wrapper PŘÍMO kolem thumbnail <img> (ne kolem titulku / avatara).
-  // Strategie: vyber největší <img> uvnitř anchor + okolí, který má video
-  // aspect ratio (~16:9), a vrať jeho bezprostřední obal.
+  // Najde thumbnail container v kartě obsahující daný anchor.
+  // Pracuje i s background-image (Kick může mít CSS pozadí místo <img>).
+  // Strategie:
+  //   1) vystoupáme od anchoru, dokud nenajdeme "kartu" (rozumná šířka)
+  //   2) v kartě hledáme největší element s video-like aspect ratio (16:9-ish)
   function findThumbContainer(anchor) {
-    // 1. Sbírej všechny <img> uvnitř anchoru i v sourozencích anchoru.
-    const candidates = new Set();
-    anchor.querySelectorAll("img").forEach((i) => candidates.add(i));
-    // Pokud anchor obaluje jen titulek, koukneme i na sousední anchor v kartě.
-    const parent = anchor.parentElement;
-    if (parent) {
-      parent.querySelectorAll("img").forEach((i) => candidates.add(i));
-      const grand = parent.parentElement;
-      if (grand) grand.querySelectorAll("img").forEach((i) => candidates.add(i));
+    // 1. Najdi kartu — rodiče, který pravděpodobně obaluje thumbnail + footer.
+    let card = anchor;
+    for (let i = 0; i < 7 && card.parentElement; i++) {
+      const pr = card.parentElement.getBoundingClientRect();
+      if (pr.height > 700 || pr.width > 900) break;
+      card = card.parentElement;
     }
 
-    let bestImg = null;
+    // 2. Projdeme strom karty a hledáme element s video aspect ratio.
+    let best = null;
     let bestArea = 0;
-    candidates.forEach((img) => {
-      const rect = img.getBoundingClientRect();
-      if (rect.width < 140 || rect.height < 70) return;
+    const walker = document.createTreeWalker(card, NodeFilter.SHOW_ELEMENT);
+    let node = walker.currentNode;
+    while ((node = walker.nextNode())) {
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 150 || rect.height < 70) continue;
+      if (rect.width > 900 || rect.height > 550) continue;
       const ratio = rect.width / rect.height;
-      // Video thumbnaily mají poměr kolem 16:9 (1.78). Povolíme 1.3 – 2.2.
-      if (ratio < 1.3 || ratio > 2.3) return;
+      if (ratio < 1.3 || ratio > 2.5) continue;
+      // Musí obsahovat nějakou obrazovou informaci (img / picture / bg-image)
+      const tag = node.tagName.toLowerCase();
+      const hasImg =
+        tag === "img" || tag === "picture" || !!node.querySelector("img, picture");
+      let hasBg = false;
+      if (!hasImg) {
+        try {
+          const cs = getComputedStyle(node);
+          hasBg =
+            cs.backgroundImage &&
+            cs.backgroundImage !== "none" &&
+            cs.backgroundImage !== "initial";
+        } catch {}
+      }
+      if (!hasImg && !hasBg) continue;
       const area = rect.width * rect.height;
       if (area > bestArea) {
-        bestImg = img;
+        best = node;
         bestArea = area;
       }
+    }
+    return best;
+  }
+
+  // Před každým decorate smaž staré dekorace, aby se nezasekávaly
+  // na elementech, které už neodpovídají aktuálnímu DOM layoutu.
+  function resetAllDecorations() {
+    document.querySelectorAll(".kvt-marked").forEach((el) => {
+      el.classList.remove("kvt-marked", "kvt-inprogress", "kvt-completed");
     });
-
-    if (!bestImg) return null;
-
-    // 2. Najdi nejtěsnější wrapper kolem toho obrázku (ne celou kartu).
-    //    Zpravidla je to <picture> nebo <div> s overflow/aspect ratio.
-    let wrapper = bestImg.parentElement;
-    // Pokud je parent <picture>, vezmi jeho parent (obvykle div s poměrem stran).
-    if (wrapper && wrapper.tagName.toLowerCase() === "picture") {
-      wrapper = wrapper.parentElement || wrapper;
-    }
-    if (!wrapper) return bestImg;
-
-    // Ověř, že wrapper má podobnou velikost jako img (jinak jsme šli moc vysoko).
-    const wr = wrapper.getBoundingClientRect();
-    const ir = bestImg.getBoundingClientRect();
-    if (wr.height > ir.height * 1.6) {
-      // Wrapper je moc velký — použij přímého rodiče obrázku.
-      wrapper = bestImg.parentElement || bestImg;
-    }
-    return wrapper;
+    document
+      .querySelectorAll(".kvt-badge, .kvt-progress, .kvt-note-icon")
+      .forEach((el) => el.remove());
+    document.querySelectorAll("a[data-kvt-original]").forEach((a) => {
+      a.setAttribute("href", a.dataset.kvtOriginal);
+      delete a.dataset.kvtOriginal;
+    });
   }
 
   function decorate() {
     if (!onListPage()) return;
+
+    // Vyčisti staré dekorace — můžou zůstat z předchozího layoutu.
+    resetAllDecorations();
 
     // Všechny odkazy na VOD detail
     const anchors = document.querySelectorAll('a[href*="/videos/"]');
