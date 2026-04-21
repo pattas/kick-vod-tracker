@@ -1,53 +1,127 @@
-// Běží na stránce seznamu záznamů streamera: https://kick.com/{streamer}/videos
-// U každého thumbnailu VODu, který je v historii, přidá barevný rámeček
-// a progress bar podle toho, kolik z VODu už uživatel viděl.
+// Běží na všech Kick stránkách. Aktivuje se jen na /{streamer}/videos.
+// Kolem rozkoukaných VOD thumbnailů přidá barevný rámeček, progress bar,
+// badge se stavem a indikátor komentáře.
 
 (function () {
   const K = window.KVT;
+  const DEBUG = false;
   let history = {};
   let decorateTimer = null;
+  let isActive = false;
+  let mo = null;
+  let lastHref = location.href;
+
+  function log(...args) {
+    if (DEBUG) console.log("[KVT-list]", ...args);
+  }
+
+  function onListPage() {
+    return !!K.parseListUrl(location.href);
+  }
 
   async function reloadHistory() {
     history = await K.loadHistory();
   }
 
+  function isElementVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  // Najde vhodný vizuální wrapper thumbnailu kolem odkazu na VOD.
+  // Hledá nejbližší container s <img> a rozumnou velikostí.
+  function findThumbContainer(anchor) {
+    // Zkus samotný anchor pokud obsahuje obrázek a je dost velký.
+    let best = null;
+    let bestArea = 0;
+    let node = anchor;
+    for (let i = 0; i < 8 && node && node !== document.body; i++) {
+      if (node.querySelector && node.querySelector("img")) {
+        const rect = node.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        // Preferujeme container, který je dostatečně velký (thumbnail),
+        // ale ne celá stránka. Rozumný rozsah: 120px+ šířka, ne více než 600.
+        if (rect.width >= 120 && rect.width <= 700 && rect.height >= 70) {
+          if (area > bestArea) {
+            best = node;
+            bestArea = area;
+          }
+        }
+      }
+      node = node.parentElement;
+    }
+    return best || anchor;
+  }
+
   function decorate() {
-    // Najdeme všechny odkazy na VOD záznamy na stránce.
+    if (!onListPage()) return;
+
+    // Všechny odkazy na VOD detail
     const anchors = document.querySelectorAll('a[href*="/videos/"]');
+    log("anchors found:", anchors.length);
+
+    // Seskupíme anchory podle klíče VODu, decorate jen ten s největším
+    // thumbnail containerem (ignorujeme text-only odkazy jako titulek).
+    const groups = new Map();
     anchors.forEach((a) => {
       const vod = K.parseVodUrl(a.href);
       if (!vod) return;
-      const entry = history[vod.key];
-      if (!entry) {
-        // Když záznam zmizel z historie, sundej zvýraznění.
-        const wrap = a.closest(".kvt-wrap");
-        if (wrap) clearDecoration(a);
+      if (!isElementVisible(a)) return;
+      if (!groups.has(vod.key)) groups.set(vod.key, []);
+      groups.get(vod.key).push(a);
+    });
+
+    log("vod groups:", groups.size);
+
+    groups.forEach((anchorList, key) => {
+      const entry = history[key];
+
+      // Vyber anchor, který má nejlepší thumbnail container (obsahuje <img>).
+      let bestAnchor = null;
+      let bestContainer = null;
+      let bestArea = 0;
+      anchorList.forEach((a) => {
+        const c = findThumbContainer(a);
+        if (!c) return;
+        const hasImg = !!c.querySelector("img");
+        if (!hasImg) return;
+        const rect = c.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        if (area > bestArea) {
+          bestAnchor = a;
+          bestContainer = c;
+          bestArea = area;
+        }
+      });
+
+      if (!bestAnchor || !bestContainer) {
+        // Není thumbnail na stránce (třeba jen text linky).
         return;
       }
-      applyDecoration(a, entry);
+
+      if (!entry) {
+        clearDecoration(bestContainer, bestAnchor);
+        return;
+      }
+
+      applyDecoration(bestContainer, bestAnchor, entry);
     });
   }
 
-  function findThumbContainer(anchor) {
-    // Chceme container, který obaluje náhled (obrázek + délka).
-    // Fallback: samotný anchor, pokud je dostatečně velký.
-    const imgWrap = anchor.querySelector("img")?.closest("div");
-    return imgWrap || anchor;
-  }
-
-  function applyDecoration(anchor, entry) {
-    const container = findThumbContainer(anchor);
-    if (!container) return;
-
+  function applyDecoration(container, anchor, entry) {
     const completed = K.isCompleted(entry);
     const ratio = K.progressRatio(entry);
 
     container.classList.add("kvt-marked");
     container.classList.toggle("kvt-completed", completed);
     container.classList.toggle("kvt-inprogress", !completed);
-    container.style.position = container.style.position || "relative";
 
-    // Badge
+    const computed = getComputedStyle(container);
+    if (computed.position === "static") {
+      container.style.position = "relative";
+    }
+
     let badge = container.querySelector(":scope > .kvt-badge");
     if (!badge) {
       badge = document.createElement("div");
@@ -58,7 +132,6 @@
       ? "✓ Dokoukáno"
       : `▶ ${Math.round(ratio * 100)}% • ${K.formatTime(entry.position)}`;
 
-    // Progress bar
     let bar = container.querySelector(":scope > .kvt-progress");
     if (!bar) {
       bar = document.createElement("div");
@@ -71,7 +144,6 @@
     const fill = bar.querySelector(".kvt-progress-fill");
     fill.style.width = `${Math.round(ratio * 100)}%`;
 
-    // Indikátor komentáře
     let noteIcon = container.querySelector(":scope > .kvt-note-icon");
     if (entry.note) {
       if (!noteIcon) {
@@ -80,30 +152,36 @@
         noteIcon.textContent = "📝";
         container.appendChild(noteIcon);
       }
-      noteIcon.title = entry.note;
       noteIcon.setAttribute("data-note", entry.note);
+      noteIcon.title = entry.note;
     } else if (noteIcon) {
       noteIcon.remove();
     }
 
-    // Upravíme href, aby klik obnovil přehrávání na poslední pozici.
     if (!completed && entry.position > K.MIN_SAVE_SECONDS) {
-      const resumeUrl = K.buildResumeUrl(entry.streamer, entry.vodId, entry.position);
-      if (anchor.getAttribute("href") !== new URL(resumeUrl).pathname + new URL(resumeUrl).search) {
-        anchor.dataset.kvtOriginal = anchor.getAttribute("href");
-        anchor.setAttribute("href", new URL(resumeUrl).pathname + new URL(resumeUrl).search);
-      }
+      try {
+        const resumeUrl = K.buildResumeUrl(
+          entry.streamer,
+          entry.vodId,
+          entry.position,
+        );
+        const newHref =
+          new URL(resumeUrl).pathname + new URL(resumeUrl).search;
+        if (anchor.getAttribute("href") !== newHref) {
+          anchor.dataset.kvtOriginal = anchor.getAttribute("href") || "";
+          anchor.setAttribute("href", newHref);
+        }
+      } catch {}
     }
   }
 
-  function clearDecoration(anchor) {
-    const container = findThumbContainer(anchor);
+  function clearDecoration(container, anchor) {
     if (!container) return;
     container.classList.remove("kvt-marked", "kvt-completed", "kvt-inprogress");
     container.querySelector(":scope > .kvt-badge")?.remove();
     container.querySelector(":scope > .kvt-progress")?.remove();
     container.querySelector(":scope > .kvt-note-icon")?.remove();
-    if (anchor.dataset.kvtOriginal) {
+    if (anchor && anchor.dataset.kvtOriginal) {
       anchor.setAttribute("href", anchor.dataset.kvtOriginal);
       delete anchor.dataset.kvtOriginal;
     }
@@ -117,28 +195,63 @@
     }, 200);
   }
 
-  async function init() {
+  async function activate() {
+    if (isActive) return;
+    isActive = true;
+    log("activating on", location.href);
     await reloadHistory();
     decorate();
 
-    // Přehlížíme změny DOMu — Kick načítá seznam postupně / po scrollu.
-    const mo = new MutationObserver(scheduleDecorate);
-    mo.observe(document.body, { childList: true, subtree: true });
+    if (!mo) {
+      mo = new MutationObserver(scheduleDecorate);
+      mo.observe(document.body, { childList: true, subtree: true });
+    }
 
-    // Po změnách historie (z jiné záložky) překreslíme.
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && changes[K.STORAGE_KEY]) {
-        history = changes[K.STORAGE_KEY].newValue || {};
-        decorate();
-      }
-    });
-
-    // Když se uživatel vrátí na tab, osvěžíme.
-    window.addEventListener("focus", async () => {
-      await reloadHistory();
-      decorate();
-    });
+    // Zkus znovu po pár prodlevách — Kick může thumbnaily renderovat postupně.
+    [500, 1200, 2500, 5000].forEach((ms) => setTimeout(scheduleDecorate, ms));
   }
 
-  init();
+  function deactivate() {
+    if (!isActive) return;
+    isActive = false;
+    log("deactivating");
+    if (mo) {
+      mo.disconnect();
+      mo = null;
+    }
+    // Necháme existující dekorace na stránce — po SPA nav se DOM odstraní sám.
+  }
+
+  function watchRoute() {
+    if (onListPage()) activate();
+    else deactivate();
+
+    setInterval(() => {
+      if (location.href !== lastHref) {
+        lastHref = location.href;
+        if (onListPage()) {
+          deactivate();
+          activate();
+        } else {
+          deactivate();
+        }
+      }
+    }, 500);
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[K.STORAGE_KEY]) {
+      history = changes[K.STORAGE_KEY].newValue || {};
+      if (isActive) scheduleDecorate();
+    }
+  });
+
+  window.addEventListener("focus", async () => {
+    if (isActive) {
+      await reloadHistory();
+      scheduleDecorate();
+    }
+  });
+
+  watchRoute();
 })();

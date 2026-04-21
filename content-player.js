@@ -122,9 +122,14 @@
   }
 
   function findVideo() {
-    // Kick používá standardní <video>, někdy uvnitř shadow DOM playeru,
-    // tak hledáme všechny na stránce.
+    // Aktivujeme přehrávač jen na VOD detailu — seznamy mohou mít preview videa.
+    if (!currentVod()) return null;
     return document.querySelector("video");
+  }
+
+  function cleanupUi() {
+    document.getElementById("kvt-note-btn")?.remove();
+    document.getElementById("kvt-note-overlay")?.remove();
   }
 
   function observeDom() {
@@ -134,19 +139,31 @@
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 
-    // Při změně URL (SPA navigace) resetujeme resumedFor.
+    // Při změně URL (SPA navigace) resetujeme resumedFor a UI.
     let lastHref = location.href;
     setInterval(() => {
       if (location.href !== lastHref) {
         lastHref = location.href;
         resumedFor = null;
-        // sundat overlay komentáře pokud je otevřený
-        document.getElementById("kvt-note-overlay")?.remove();
-        const v = findVideo();
-        if (v) attachToVideo(v);
-        refreshNoteBadge();
+        currentVideo = null;
+        if (saveTimer) {
+          clearInterval(saveTimer);
+          saveTimer = null;
+        }
+        cleanupUi();
+        if (currentVod()) {
+          const v = findVideo();
+          if (v) attachToVideo(v);
+          // Kick rendruje <video> až po chvíli — zkus znovu.
+          [400, 1000, 2000, 4000].forEach((ms) =>
+            setTimeout(() => {
+              const v2 = findVideo();
+              if (v2 && v2 !== currentVideo) attachToVideo(v2);
+            }, ms),
+          );
+        }
       }
-    }, 1000);
+    }, 500);
 
     // Aktualizujeme badge tlačítka po externí změně (třeba z popupu).
     if (chrome?.storage?.onChanged) {
@@ -408,6 +425,17 @@
   });
 
   observeDom();
-  const v = findVideo();
-  if (v) attachToVideo(v);
+  if (currentVod()) {
+    const v = findVideo();
+    if (v) attachToVideo(v);
+    // Retry pro případy, kdy se <video> renderuje později.
+    [500, 1500, 3000].forEach((ms) =>
+      setTimeout(() => {
+        if (!currentVideo && currentVod()) {
+          const v2 = findVideo();
+          if (v2) attachToVideo(v2);
+        }
+      }, ms),
+    );
+  }
 })();

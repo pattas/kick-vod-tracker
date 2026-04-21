@@ -24,13 +24,8 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://kick.com/*/videos/*", "*://*.kick.com/*/videos/*"],
-      "js": ["common.js", "content-player.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["*://kick.com/*/videos", "*://*.kick.com/*/videos"],
-      "js": ["common.js", "content-list.js"],
+      "matches": ["*://kick.com/*", "*://*.kick.com/*"],
+      "js": ["common.js", "content-player.js", "content-list.js"],
       "css": ["content-list.css"],
       "run_at": "document_idle"
     }
