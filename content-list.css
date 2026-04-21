@@ -1,40 +1,40 @@
 .kvt-marked {
-  outline: 3px solid transparent;
-  outline-offset: -3px;
-  border-radius: 8px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  border-radius: 6px;
   transition: outline-color 0.2s ease;
 }
 
 .kvt-inprogress {
   outline-color: #53fc18 !important;
-  box-shadow: 0 0 0 1px rgba(83, 252, 24, 0.4), 0 0 18px rgba(83, 252, 24, 0.35) !important;
+  box-shadow: 0 0 0 1px rgba(83, 252, 24, 0.35) !important;
 }
 
 .kvt-completed {
-  outline-color: #8a8a8a !important;
-  box-shadow: 0 0 0 1px rgba(140, 140, 140, 0.4) !important;
-  opacity: 0.85;
+  outline-color: rgba(140, 140, 140, 0.75) !important;
+  opacity: 0.8;
 }
 
 .kvt-badge {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  background: rgba(12, 12, 12, 0.88);
+  top: 4px;
+  left: 4px;
+  background: rgba(10, 10, 10, 0.85);
   color: #53fc18;
-  font: 700 11px/1 system-ui, sans-serif;
-  padding: 4px 8px;
-  border-radius: 6px;
-  pointer-events: none;
+  font: 700 10px/1 system-ui, sans-serif;
+  padding: 3px 6px;
+  border-radius: 4px;
+  pointer-events: auto;
   z-index: 5;
   letter-spacing: 0.02em;
-  border: 1px solid rgba(83, 252, 24, 0.5);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(83, 252, 24, 0.45);
+  user-select: none;
+  white-space: nowrap;
 }
 
 .kvt-completed .kvt-badge {
   color: #c9c9c9;
-  border-color: rgba(200, 200, 200, 0.4);
+  border-color: rgba(200, 200, 200, 0.35);
 }
 
 .kvt-progress {
@@ -42,13 +42,11 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.18);
+  height: 3px;
+  background: rgba(0, 0, 0, 0.35);
   overflow: hidden;
   pointer-events: none;
   z-index: 5;
-  border-bottom-left-radius: 8px;
-  border-bottom-right-radius: 8px;
 }
 
 .kvt-progress-fill {
@@ -63,17 +61,16 @@
 
 .kvt-note-icon {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  background: rgba(12, 12, 12, 0.88);
+  top: 4px;
+  right: 4px;
+  background: rgba(10, 10, 10, 0.85);
   color: #53fc18;
-  font-size: 14px;
+  font-size: 11px;
   line-height: 1;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 3px 5px;
+  border-radius: 4px;
   z-index: 6;
-  border: 1px solid rgba(83, 252, 24, 0.5);
-  filter: drop-shadow(0 0 4px rgba(83, 252, 24, 0.4));
+  border: 1px solid rgba(83, 252, 24, 0.45);
   cursor: help;
   user-select: none;
 }
@@ -99,10 +96,9 @@
   pointer-events: none;
   transform: translateY(-4px);
   transition: opacity 0.15s ease, transform 0.15s ease;
-  z-index: 10;
+  z-index: 20;
   font-weight: 400;
   text-align: left;
-  filter: none;
 }
 
 .kvt-note-icon:hover::after {

@@ -29,29 +29,55 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  // Najde vhodný vizuální wrapper thumbnailu kolem odkazu na VOD.
-  // Hledá nejbližší container s <img> a rozumnou velikostí.
+  // Najde wrapper PŘÍMO kolem thumbnail <img> (ne kolem titulku / avatara).
+  // Strategie: vyber největší <img> uvnitř anchor + okolí, který má video
+  // aspect ratio (~16:9), a vrať jeho bezprostřední obal.
   function findThumbContainer(anchor) {
-    // Zkus samotný anchor pokud obsahuje obrázek a je dost velký.
-    let best = null;
-    let bestArea = 0;
-    let node = anchor;
-    for (let i = 0; i < 8 && node && node !== document.body; i++) {
-      if (node.querySelector && node.querySelector("img")) {
-        const rect = node.getBoundingClientRect();
-        const area = rect.width * rect.height;
-        // Preferujeme container, který je dostatečně velký (thumbnail),
-        // ale ne celá stránka. Rozumný rozsah: 120px+ šířka, ne více než 600.
-        if (rect.width >= 120 && rect.width <= 700 && rect.height >= 70) {
-          if (area > bestArea) {
-            best = node;
-            bestArea = area;
-          }
-        }
-      }
-      node = node.parentElement;
+    // 1. Sbírej všechny <img> uvnitř anchoru i v sourozencích anchoru.
+    const candidates = new Set();
+    anchor.querySelectorAll("img").forEach((i) => candidates.add(i));
+    // Pokud anchor obaluje jen titulek, koukneme i na sousední anchor v kartě.
+    const parent = anchor.parentElement;
+    if (parent) {
+      parent.querySelectorAll("img").forEach((i) => candidates.add(i));
+      const grand = parent.parentElement;
+      if (grand) grand.querySelectorAll("img").forEach((i) => candidates.add(i));
     }
-    return best || anchor;
+
+    let bestImg = null;
+    let bestArea = 0;
+    candidates.forEach((img) => {
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 140 || rect.height < 70) return;
+      const ratio = rect.width / rect.height;
+      // Video thumbnaily mají poměr kolem 16:9 (1.78). Povolíme 1.3 – 2.2.
+      if (ratio < 1.3 || ratio > 2.3) return;
+      const area = rect.width * rect.height;
+      if (area > bestArea) {
+        bestImg = img;
+        bestArea = area;
+      }
+    });
+
+    if (!bestImg) return null;
+
+    // 2. Najdi nejtěsnější wrapper kolem toho obrázku (ne celou kartu).
+    //    Zpravidla je to <picture> nebo <div> s overflow/aspect ratio.
+    let wrapper = bestImg.parentElement;
+    // Pokud je parent <picture>, vezmi jeho parent (obvykle div s poměrem stran).
+    if (wrapper && wrapper.tagName.toLowerCase() === "picture") {
+      wrapper = wrapper.parentElement || wrapper;
+    }
+    if (!wrapper) return bestImg;
+
+    // Ověř, že wrapper má podobnou velikost jako img (jinak jsme šli moc vysoko).
+    const wr = wrapper.getBoundingClientRect();
+    const ir = bestImg.getBoundingClientRect();
+    if (wr.height > ir.height * 1.6) {
+      // Wrapper je moc velký — použij přímého rodiče obrázku.
+      wrapper = bestImg.parentElement || bestImg;
+    }
+    return wrapper;
   }
 
   function decorate() {
@@ -77,35 +103,24 @@
     groups.forEach((anchorList, key) => {
       const entry = history[key];
 
-      // Vyber anchor, který má nejlepší thumbnail container (obsahuje <img>).
-      let bestAnchor = null;
-      let bestContainer = null;
-      let bestArea = 0;
-      anchorList.forEach((a) => {
+      // Projdi anchory a najdi jeden s odpovídajícím video thumbnailem.
+      let container = null;
+      for (const a of anchorList) {
         const c = findThumbContainer(a);
-        if (!c) return;
-        const hasImg = !!c.querySelector("img");
-        if (!hasImg) return;
-        const rect = c.getBoundingClientRect();
-        const area = rect.width * rect.height;
-        if (area > bestArea) {
-          bestAnchor = a;
-          bestContainer = c;
-          bestArea = area;
+        if (c) {
+          container = c;
+          break;
         }
-      });
-
-      if (!bestAnchor || !bestContainer) {
-        // Není thumbnail na stránce (třeba jen text linky).
-        return;
       }
+
+      if (!container) return;
 
       if (!entry) {
-        clearDecoration(bestContainer, bestAnchor);
+        clearDecoration(container, anchorList[0]);
         return;
       }
 
-      applyDecoration(bestContainer, bestAnchor, entry);
+      applyDecoration(container, anchorList[0], entry);
     });
   }
 
@@ -128,9 +143,10 @@
       badge.className = "kvt-badge";
       container.appendChild(badge);
     }
-    badge.textContent = completed
-      ? "✓ Dokoukáno"
-      : `▶ ${Math.round(ratio * 100)}% • ${K.formatTime(entry.position)}`;
+    badge.textContent = completed ? "✓" : `${Math.round(ratio * 100)}%`;
+    badge.title = completed
+      ? "Dokoukáno"
+      : `${K.formatTime(entry.position)} / ${K.formatTime(entry.duration)}`;
 
     let bar = container.querySelector(":scope > .kvt-progress");
     if (!bar) {
